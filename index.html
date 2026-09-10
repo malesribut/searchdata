@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Name Search Tool</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use SheetJS (xlsx) for parsing excel files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-gray-50 p-3 sm:p-6">
+
+    <div class="bg-white rounded-2xl shadow-xl p-5 md:p-8 w-full max-w-3xl mx-auto mt-2 mb-8 sm:my-auto flex flex-col">
+        
+        <div class="text-center mb-6 md:mb-8">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Excel Data Search</h1>
+            <p class="text-gray-500 text-sm">Search by name in the connected database</p>
+        </div>
+
+        <!-- System Status Section (Replacing File Upload) -->
+        <div class="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+                <div id="statusIcon" class="h-6 w-6 text-yellow-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <div>
+                    <span class="block text-sm font-medium text-gray-700">Database Status</span>
+                    <p id="fileStatus" class="text-sm text-yellow-600 font-medium">Connecting to database...</p>
+                </div>
+            </div>
+            
+            <!-- Fallback Input (Hidden by default, shown if auto-connect fails in sandbox) -->
+            <div id="fallbackUpload" class="hidden">
+                <label for="manualUpload" class="cursor-pointer bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    Browse File Manually
+                </label>
+                <input id="manualUpload" type="file" accept=".xlsx, .xls" class="hidden">
+            </div>
+        </div>
+
+        <!-- Search Section -->
+        <div class="mb-6">
+            <label class="block text-sm font-semibold text-gray-700 mb-2" for="searchInput">
+                2. Search by Name
+            </label>
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <input type="text" id="searchInput" placeholder="Ketik nama di sini (tanpa PBD)..." disabled
+                       class="block w-full pl-11 pr-4 py-3 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base disabled:bg-gray-100 disabled:cursor-not-allowed transition-shadow shadow-sm">
+            </div>
+            <p class="mt-2 text-xs text-gray-500 leading-relaxed">Note: Pencarian bersifat realtime. Ketik sebagian nama (depan, tengah, atau belakang) dan data akan langsung disaring.</p>
+        </div>
+
+        <!-- Result Section -->
+        <div id="resultContainer" class="hidden mt-6 border-t border-gray-200 pt-6">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Search Results</h2>
+            
+            <!-- Alert Message -->
+            <div id="alertMessage" class="p-4 mb-4 rounded-md hidden text-sm"></div>
+
+            <!-- Card Layout for Results (Mobile Friendly, No Scroll) -->
+            <div id="resultsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden">
+                <!-- Data cards will be injected here -->
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 rounded-xl">
+            <div class="bg-white p-5 rounded-lg flex items-center space-x-3">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <span class="text-gray-700 font-medium" id="loadingText">Processing...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Popup Data Detail -->
+    <div id="detailModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-end sm:items-center justify-center z-50 sm:p-4 transition-opacity">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] flex flex-col transform transition-transform">
+            <!-- Modal Header -->
+            <div class="p-4 sm:p-5 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white rounded-t-2xl z-10">
+                <h3 class="text-lg md:text-xl font-bold text-gray-800 truncate pr-4" id="modalTitle">Detail Data</h3>
+                <button onclick="closeModal()" class="text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 focus:outline-none p-2 rounded-full transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="p-4 sm:p-5 overflow-y-auto flex-1 relative" id="modalContent">
+                <!-- Data detail will be injected here -->
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="p-4 border-t border-gray-100 text-right sticky bottom-0 bg-white rounded-b-2xl">
+                <button onclick="closeModal()" class="w-full sm:w-auto px-6 py-3 sm:py-2 bg-blue-600 text-white text-base sm:text-sm font-semibold rounded-xl sm:rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors shadow-sm">
+                    Tutup
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State variables
+        let excelData = [];
+        let headers = [];
+        
+        // Define the target filename
+        const TARGET_FILE_NAME = 'Security Issue_ LibreOffice Version-data-2026-09-09 08_30_21.xlsx';
+
+        // DOM Elements
+        const searchInput = document.getElementById('searchInput');
+        const fileStatus = document.getElementById('fileStatus');
+        const statusIcon = document.getElementById('statusIcon');
+        const resultContainer = document.getElementById('resultContainer');
+        const alertMessage = document.getElementById('alertMessage');
+        const resultsList = document.getElementById('resultsList');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        const fallbackUpload = document.getElementById('fallbackUpload');
+        const manualUpload = document.getElementById('manualUpload');
+
+        // Modal Elements
+        const detailModal = document.getElementById('detailModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+
+        let searchTimeout = null;
+
+        // Event Listeners
+        searchInput.addEventListener('input', function(e) {
+            clearTimeout(searchTimeout);
+            // Memberikan jeda 300ms saat mengetik agar tidak lag
+            searchTimeout = setTimeout(() => {
+                performSearch();
+            }, 300);
+        });
+        
+        manualUpload.addEventListener('change', handleManualUpload);
+
+        // Menutup modal jika user klik area di luar kotak modal
+        detailModal.addEventListener('click', function(e) {
+            if (e.target === detailModal) {
+                closeModal();
+            }
+        });
+
+        // Load the file automatically on page load
+        window.addEventListener('DOMContentLoaded', loadDatabaseFile);
+
+        async function loadDatabaseFile() {
+            showLoading("Connecting to database...");
+            
+            try {
+                // Safely construct the URL to avoid 'Failed to parse URL' in sandbox environments
+                let fetchUrl = TARGET_FILE_NAME;
+                
+                // Construct an absolute path if origin is available to prevent parsing errors
+                if (window.location.origin && window.location.origin !== 'null') {
+                    fetchUrl = window.location.origin + '/' + encodeURIComponent(TARGET_FILE_NAME);
+                } else {
+                    // Fallback to absolute relative path
+                    fetchUrl = '/' + encodeURIComponent(TARGET_FILE_NAME);
+                }
+                
+                // Fetch the file from the URL
+                const response = await fetch(fetchUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}.`);
+                }
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const data = new Uint8Array(arrayBuffer);
+                
+                processExcelData(data);
+                
+            } catch (error) {
+                console.error("Error loading database:", error);
+                updateStatusUI(false, `Auto-connect failed. Please select the file manually.`);
+                // Show fallback upload button so the user is not stuck
+                fallbackUpload.classList.remove('hidden');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function handleManualUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            showLoading("Reading file...");
+            const reader = new FileReader();
+            
+            reader.onload = function(event) {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    processExcelData(data);
+                    fallbackUpload.classList.add('hidden'); // Hide fallback on success
+                } catch (error) {
+                    console.error("Error processing manual file:", error);
+                    updateStatusUI(false, `Failed to parse Excel file.`);
+                } finally {
+                    hideLoading();
+                }
+            };
+            
+            reader.onerror = function() {
+                hideLoading();
+                updateStatusUI(false, `Failed to read file.`);
+            }
+            
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processExcelData(data) {
+            // Parse the excel file using SheetJS
+            const workbook = XLSX.read(data, {type: 'array'});
+            
+            // Get the first sheet name
+            const firstSheetName = workbook.SheetNames[0];
+            // Get the sheet object
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Convert sheet to JSON array (array of arrays format to get headers easily)
+            const rawData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+            
+            if (rawData.length > 0) {
+                // Assume first row is header
+                headers = rawData[0];
+                
+                // Convert the rest to an array of objects
+                excelData = XLSX.utils.sheet_to_json(worksheet);
+                
+                // Update UI for success
+                updateStatusUI(true, `Database connected. Ready to search ${excelData.length} records.`);
+                
+            } else {
+                throw new Error("The database file appears to be empty.");
+            }
+        }
+
+        function updateStatusUI(isSuccess, message) {
+            fileStatus.textContent = message;
+            if (isSuccess) {
+                fileStatus.className = 'text-sm text-green-600 font-medium';
+                statusIcon.className = 'h-6 w-6 text-green-500';
+                statusIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+                searchInput.disabled = false;
+            } else {
+                fileStatus.className = 'text-sm text-red-600 font-medium';
+                statusIcon.className = 'h-6 w-6 text-red-500';
+                statusIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>`;
+                searchInput.disabled = true;
+            }
+        }
+
+        function performSearch() {
+            // Ambil text, jadikan huruf kecil
+            let searchTerm = searchInput.value.trim().toLowerCase();
+            
+            // Jika pencarian kosong, sembunyikan hasil tanpa memunculkan error
+            if (!searchTerm) {
+                resultContainer.classList.add('hidden');
+                return;
+            }
+
+            // Hapus kata "pbd" dari pencarian secara otomatis agar lebih fleksibel
+            searchTerm = searchTerm.replace(/pbd/g, '').trim();
+
+            if (excelData.length === 0) {
+                return;
+            }
+
+            // Identifikasi kolom nama
+            const nameColumns = headers.filter(header => {
+                if (typeof header !== 'string') return false;
+                const lowerHeader = header.toLowerCase();
+                return lowerHeader.includes('name') || 
+                       lowerHeader.includes('nama') || 
+                       lowerHeader === 'first' || 
+                       lowerHeader === 'last';
+            });
+
+            let results = [];
+
+            if (nameColumns.length > 0) {
+                // Mencari di kolom nama yang terdeteksi
+                results = excelData.filter(row => {
+                    return nameColumns.some(colName => {
+                        const cellValue = row[colName];
+                        if (cellValue !== null && cellValue !== undefined) {
+                            return String(cellValue).toLowerCase().includes(searchTerm);
+                        }
+                        return false;
+                    });
+                });
+            } else {
+                // Fallback: mencari di seluruh kolom jika header nama tidak jelas
+                results = excelData.filter(row => {
+                    return Object.values(row).some(cellValue => {
+                        if (cellValue !== null && cellValue !== undefined) {
+                            return String(cellValue).toLowerCase().includes(searchTerm);
+                        }
+                        return false;
+                    });
+                });
+            }
+
+            displayResults(results, searchTerm);
+        }
+
+        function displayResults(results, searchTerm) {
+            resultContainer.classList.remove('hidden');
+            
+            if (results.length === 0) {
+                showAlert(`No data found for name: "<b>${searchTerm}</b>".`, "info");
+                resultsList.classList.add('hidden');
+            } else {
+                showAlert(`Found <b>${results.length}</b> result(s) for "<b>${searchTerm}</b>". Klik nama untuk melihat detail.`, "success");
+                renderResults(results);
+                resultsList.classList.remove('hidden');
+            }
+        }
+
+        function renderResults(data) {
+            // Clear previous content
+            resultsList.innerHTML = '';
+
+            if (data.length === 0 || headers.length === 0) return;
+
+            // Mencari kolom yang paling mungkin berisi "Nama" untuk dijadikan judul list
+            let nameCol = headers[0]; // Default ke kolom pertama jika tidak ketemu
+            const foundNameCol = headers.find(h => {
+                if(typeof h !== 'string') return false;
+                const lower = h.toLowerCase();
+                return lower.includes('name') || lower.includes('nama');
+            });
+            if (foundNameCol) {
+                nameCol = foundNameCol;
+            }
+
+            // Generate Simple Clickable Cards
+            data.forEach((rowData) => {
+                const card = document.createElement('div');
+                card.className = 'bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-400 cursor-pointer transition-all flex justify-between items-center group';
+                
+                let displayName = rowData[nameCol];
+                if (displayName === undefined || displayName === null || displayName === '') {
+                    displayName = '- (Tanpa Nama) -';
+                }
+                
+                card.innerHTML = `
+                    <div class="flex items-center truncate">
+                        <div class="bg-blue-100 text-blue-600 rounded-full p-2 mr-3 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                            </svg>
+                        </div>
+                        <span class="font-medium text-gray-800 truncate group-hover:text-blue-700 transition-colors text-base">${displayName}</span>
+                    </div>
+                    <div class="text-gray-400 group-hover:text-blue-500 transition-colors ml-2 flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                `;
+                
+                // Tambahkan event click untuk membuka modal
+                card.onclick = () => openModal(rowData, displayName);
+                
+                resultsList.appendChild(card);
+            });
+        }
+
+        function openModal(rowData, titleName) {
+            // Set judul modal
+            modalTitle.textContent = titleName;
+            
+            // Bersihkan konten modal sebelumnya
+            modalContent.innerHTML = '';
+            
+            // Generate isi detail data
+            headers.forEach(header => {
+                let cellValue = rowData[header];
+                if (cellValue === undefined || cellValue === null || cellValue === '') {
+                    cellValue = '-';
+                }
+                
+                const fieldContainer = document.createElement('div');
+                fieldContainer.className = 'mb-3 pb-3 border-b border-gray-100 last:border-0 last:mb-0 last:pb-0';
+                
+                const label = document.createElement('span');
+                label.className = 'block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1';
+                label.textContent = header || 'Unknown';
+                
+                const value = document.createElement('span');
+                value.className = 'block text-sm font-medium text-gray-900 break-words';
+                value.textContent = cellValue;
+                
+                fieldContainer.appendChild(label);
+                fieldContainer.appendChild(value);
+                modalContent.appendChild(fieldContainer);
+            });
+            
+            // Tampilkan modal
+            detailModal.classList.remove('hidden');
+            // Mencegah body scroll di latar belakang (optional for better mobile UX)
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal() {
+            detailModal.classList.add('hidden');
+            // Mengembalikan scroll body
+            document.body.style.overflow = '';
+        }
+
+        function showAlert(messageHTML, type) {
+            alertMessage.innerHTML = messageHTML;
+            alertMessage.classList.remove('hidden', 'bg-blue-100', 'text-blue-800', 'bg-yellow-100', 'text-yellow-800', 'bg-green-100', 'text-green-800');
+            
+            if (type === 'info') {
+                alertMessage.classList.add('bg-blue-100', 'text-blue-800');
+            } else if (type === 'warning') {
+                alertMessage.classList.add('bg-yellow-100', 'text-yellow-800');
+            } else if (type === 'success') {
+                alertMessage.classList.add('bg-green-100', 'text-green-800');
+            }
+        }
+
+        function showLoading(text) {
+            loadingText.textContent = text;
+            loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            loadingOverlay.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
